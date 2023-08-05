@@ -1,5 +1,7 @@
-use actix_web::{web, App, HttpServer, get, post};
+use actix_web::{web, App, HttpServer, get, post, Responder};
 use serde::{Serialize, Deserialize};
+use tokio_postgres::{NoTls, Client, GenericClient};
+use deadpool_postgres::{Pool, Manager, RecyclingMethod, ManagerConfig};
 
 use crate::auth::{hash_password, create_token};
 
@@ -25,12 +27,20 @@ struct AuthResult {
 }
 
 #[post("/register")]
-async fn register(data: web::Json<RegisterRequest>) -> web::Json<AuthResult> {
+async fn register(data: web::Json<RegisterRequest>, client: web::Data<Pool>) -> web::Json<AuthResult> {
 
     let credentials = crate::auth::hash_password(&data.password);
 
     /// TODO: create user in database if not exist else thorw error
     /// TODO: create refresh token in database
+
+    match client.get().await.unwrap().query(
+        "INSERT INTO users (username, password, email) VALUES ($1, $2, $3)",
+        &[&data.username, &credentials.hash, &data.email]
+    ).await {
+        Ok(_) => println!("User created"),
+        Err(e) => println!("Error creating user: {}", e)
+    }
 
     web::Json(AuthResult {
         token: create_token(),
@@ -40,8 +50,9 @@ async fn register(data: web::Json<RegisterRequest>) -> web::Json<AuthResult> {
 }
 
 #[post("/login")]
-async fn login() -> String {
-    panic!("Not implemented")
+async fn login() -> impl Responder {
+    // panic!("Not implemented")
+    "Hello world!"
 }
 
 #[post("/refresh_token")]
@@ -56,14 +67,23 @@ async fn profile() -> String {
 
 
 #[tokio::main]
-async fn main() {
+async fn main() -> std::io::Result<()> {
+    let mut pg_config = tokio_postgres::Config::new();
+    pg_config.user("postgres");
+    pg_config.password("postgres");
+    pg_config.dbname("postgres");
+    pg_config.port(5433);
+    pg_config.host("localhost");
+
+    let manager = Manager::new(pg_config, NoTls).await.unwrap();
+    let pool = Pool::new(manager, 10, RecyclingMethod::Fast);
+
     HttpServer::new(|| {
         App::new()
+            .app_data(pool.clone())
             .service(register)
     })
-    .bind("0.0.0.0:8075")
-    .unwrap()
+    .bind("0.0.0.0:8075")?
     .run()
     .await
-    .unwrap();
 }

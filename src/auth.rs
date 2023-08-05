@@ -16,7 +16,7 @@ const CREDENTIALS_LENGTH: usize = digest::SHA512_OUTPUT_LEN;
 type Hash = [u8; CREDENTIALS_LENGTH];
 
 pub struct Credentials {
-    hash: String,
+    pub(crate) hash: String,
     salt: String,
 }
 
